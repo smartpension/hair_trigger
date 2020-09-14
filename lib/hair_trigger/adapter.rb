@@ -1,3 +1,5 @@
+require 'hair_trigger/mysql/definer'
+
 module HairTrigger
   module Adapter
     def create_trigger(name = nil, options = {})
@@ -14,12 +16,13 @@ module HairTrigger
 
     def normalize_mysql_definer(definer)
       user, host = definer.split('@')
-      host = @config[:host] || 'localhost' if host == '%'
-      "'#{user}'@'#{host}'" # SHOW TRIGGERS doesn't quote them, but we need quotes for creating a trigger
+      mysql_definer = ::HairTrigger::Mysql::Definer.new(user: user, host: host, config: @config)
+      mysql_definer.to_s
     end
 
     def implicit_mysql_definer
-      "'#{@config[:username] || 'root'}'@'#{@config[:host] || 'localhost'}'"
+      mysql_definer = ::HairTrigger::Mysql::Definer.new(config: @config)
+      mysql_definer.to_s
     end
 
     def triggers(options = {})
@@ -33,7 +36,7 @@ module HairTrigger
           end
         when :mysql
           select_rows("SHOW TRIGGERS").each do |(name, event, table, actions, timing, created, sql_mode, definer)|
-            definer = normalize_mysql_definer(definer)
+            definer = normalize_mysql_definer(definer) # SHOW TRIGGERS doesn't quote user and host, but we need quotes for creating a trigger
             next if options[:only] && !options[:only].include?(name)
             triggers[name.strip] = <<-SQL
 CREATE #{definer != implicit_mysql_definer ? "DEFINER = #{definer} " : ""}TRIGGER #{name} #{timing} #{event} ON `#{table}`
